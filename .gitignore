@@ -1,0 +1,9 @@
+.idea/
+.ipynb_checkpoints/
+.venv/
+.venv312/
+__pycache__/
+*.pyc
+image/
+record/
+archive/notebooks/
