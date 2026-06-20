@@ -3,6 +3,16 @@
 IPDDS is a Streamlit-based bottle-cap defect detection and statistics dashboard.  
 The project focuses on one clear workflow: capture frames from a camera, run YOLO-based defect detection, save results into CSV, and review detection trends in a lightweight visual dashboard.
 
+## Screenshots
+
+### Detection View
+
+![Detection View](assets/screenshots/detection-view.png)
+
+### Statistics View
+
+![Statistics View](assets/screenshots/statistics-view.png)
+
 ## Highlights
 
 - Real-time camera capture with `streamlit-webrtc`
