@@ -406,6 +406,10 @@ def defect_record_summary(defect_store) -> None:
             <p class="metric-note" style="margin-top: 0; font-size: 0.95rem;">{avg_confidence_text}</p>
             <p class="metric-label metric-label--pink" style="margin-top: 1rem;">缺陷占比</p>
             <p class="metric-note" style="margin-top: 0; font-size: 0.95rem;">{defect_rate_text}</p>
+            <p class="metric-label metric-label--pink" style="margin-top: 1rem;">批次摘要</p>
+            <p class="metric-note" style="margin-top: 0; font-size: 0.95rem;">{summary['batch_summary_text']}</p>
+            <p class="metric-label metric-label--pink" style="margin-top: 1rem;">班次摘要</p>
+            <p class="metric-note" style="margin-top: 0; font-size: 0.95rem;">{summary['shift_summary_text']}</p>
         </div>
         """,
         unsafe_allow_html=True,

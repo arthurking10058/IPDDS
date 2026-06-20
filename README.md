@@ -75,6 +75,16 @@ Public entry remains:
 streamlit run IPDDS.py
 ```
 
+## Usage Flow
+
+1. 启动应用并进入 `检测页`
+2. 允许浏览器访问摄像头，确认实时视频已正常显示
+3. 将瓶盖样品放到镜头前，点击 `拍摄`
+4. 点击 `识别`，等待模型完成缺陷检测
+5. 如需保留结果，可点击 `保存`
+6. 切换到 `统计页` 查看时间序列图、比例图和记录摘要
+7. 按需使用筛选与导出功能，导出 CSV、筛选结果或当前图像
+
 ## Runtime Scripts
 
 Lightweight self-check:
@@ -116,17 +126,21 @@ Offline statistics export:
 
 The public repository version keeps only the CSV header by default.
 
+Batch-level and shift-level summaries are derived from the timestamp sequence:
+
+- `batch`: starts a new derived batch when the gap between adjacent records exceeds 10 minutes
+- `shift`: grouped into `白班` / `中班` / `夜班` based on record time
+
 ## Current Scope
 
 - Streamlit single-entry application
 - CSV-based lightweight storage
 - YOLO local inference with local weights
 - Split dashboard views inside one app entry
-- Summary is currently aggregated from CSV records, not batch-level data
+- Summary is currently aggregated from CSV records, including derived batch and shift views
 
 ## Next Possible Improvements
 
-- Extend summaries to batch-level or shift-level analysis
 - Gradually phase out `defect_data_manager.py` and `yolo_model.py`
 - Keep `requirements.txt` aligned with the verified runtime as the project evolves
 

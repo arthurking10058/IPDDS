@@ -15,6 +15,8 @@ class StatsReport:
     time_range_label: str
     interval_label: str
     summary: dict
+    batch_summaries: list[dict[str, object]]
+    shift_summaries: list[dict[str, object]]
     scratch_time_series: list[dict[str, object]]
     dirty_time_series: list[dict[str, object]]
 
@@ -46,6 +48,8 @@ def build_stats_report(store: DefectDataStore, time_range_label: str = "30分钟
         time_range_label=time_range_label,
         interval_label=interval_label,
         summary=store.get_summary(),
+        batch_summaries=store.get_batch_summaries(),
+        shift_summaries=store.get_shift_summaries(),
         scratch_time_series=_series_to_rows(scratch_counts),
         dirty_time_series=_series_to_rows(dirty_counts),
     )

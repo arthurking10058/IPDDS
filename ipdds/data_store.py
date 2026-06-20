@@ -117,6 +117,92 @@ class DefectDataStore:
         filtered = self.defect_data[time_mask & type_mask]
         return filtered.groupby(pd.Grouper(key=COLUMN_TIME, freq=freq))[COLUMN_TYPE].count()
 
+    def _with_batch_and_shift(self, df: pd.DataFrame) -> pd.DataFrame:
+        enriched = df.copy().sort_values(COLUMN_TIME).reset_index(drop=True)
+        if enriched.empty:
+            enriched["batch_id"] = pd.Series(dtype="object")
+            enriched["shift_name"] = pd.Series(dtype="object")
+            return enriched
+
+        # A new batch starts when the time gap between adjacent records exceeds 10 minutes.
+        time_gaps = enriched[COLUMN_TIME].diff().dt.total_seconds().fillna(0)
+        batch_numbers = (time_gaps > 600).cumsum() + 1
+        enriched["batch_id"] = [f"B{number:03d}" for number in batch_numbers]
+        enriched["shift_name"] = enriched[COLUMN_TIME].apply(self._resolve_shift_name)
+        return enriched
+
+    @staticmethod
+    def _resolve_shift_name(timestamp: pd.Timestamp) -> str:
+        hour = int(timestamp.hour)
+        if 6 <= hour < 14:
+            return "白班"
+        if 14 <= hour < 22:
+            return "中班"
+        return "夜班"
+
+    @staticmethod
+    def _summarize_group(df: pd.DataFrame) -> dict[str, Any]:
+        cap_count = int((df[COLUMN_TYPE] == "cap").sum())
+        defect_total = int(df[COLUMN_TYPE].isin(FOCUS_DEFECT_TYPES).sum())
+        dirty_count = int((df[COLUMN_TYPE] == "dirty").sum())
+        scratch_count = int((df[COLUMN_TYPE] == "scratch").sum())
+        confidence_series = pd.to_numeric(df[COLUMN_CONFIDENCE], errors="coerce").dropna()
+        avg_confidence = float(confidence_series.mean()) if not confidence_series.empty else None
+        defect_rate = float(defect_total / cap_count) if cap_count else 0.0
+        start_time = df[COLUMN_TIME].min()
+        end_time = df[COLUMN_TIME].max()
+        return {
+            "record_count": int(len(df)),
+            "cap_count": cap_count,
+            "defect_total": defect_total,
+            "dirty_count": dirty_count,
+            "scratch_count": scratch_count,
+            "avg_confidence": avg_confidence,
+            "defect_rate": defect_rate,
+            "time_range_text": f"{start_time.strftime(DISPLAY_TIME_FORMAT)} 至 {end_time.strftime(DISPLAY_TIME_FORMAT)}",
+        }
+
+    def get_batch_summaries(self, data: pd.DataFrame | None = None) -> list[dict[str, Any]]:
+        df = self.defect_data if data is None else data.copy()
+        if df.empty:
+            return []
+
+        normalized = df.copy()
+        normalized[COLUMN_TIME] = pd.to_datetime(normalized[COLUMN_TIME], errors="coerce")
+        normalized = normalized.dropna(subset=[COLUMN_TIME])
+        if normalized.empty:
+            return []
+
+        enriched = self._with_batch_and_shift(normalized)
+        summaries: list[dict[str, Any]] = []
+        for batch_id, batch_df in enriched.groupby("batch_id", sort=False):
+            item = self._summarize_group(batch_df)
+            item["batch_id"] = batch_id
+            item["shift_name"] = str(batch_df["shift_name"].mode().iloc[0])
+            summaries.append(item)
+        return summaries
+
+    def get_shift_summaries(self, data: pd.DataFrame | None = None) -> list[dict[str, Any]]:
+        df = self.defect_data if data is None else data.copy()
+        if df.empty:
+            return []
+
+        normalized = df.copy()
+        normalized[COLUMN_TIME] = pd.to_datetime(normalized[COLUMN_TIME], errors="coerce")
+        normalized = normalized.dropna(subset=[COLUMN_TIME])
+        if normalized.empty:
+            return []
+
+        enriched = self._with_batch_and_shift(normalized)
+        order = {"白班": 0, "中班": 1, "夜班": 2}
+        summaries: list[dict[str, Any]] = []
+        for shift_name, shift_df in sorted(enriched.groupby("shift_name"), key=lambda item: order.get(item[0], 99)):
+            item = self._summarize_group(shift_df)
+            item["shift_name"] = shift_name
+            item["batch_count"] = int(shift_df["batch_id"].nunique())
+            summaries.append(item)
+        return summaries
+
     def get_summary(self, data: pd.DataFrame | None = None) -> dict[str, Any]:
         df = self.defect_data if data is None else data.copy()
         if df.empty:
@@ -133,6 +219,10 @@ class DefectDataStore:
                 "top_defect_type_text": "暂无记录",
                 "recent_summary_text": "暂无可汇总的检测记录。",
                 "type_breakdown": {},
+                "batch_summary_text": "暂无批次摘要",
+                "shift_summary_text": "暂无班次摘要",
+                "batch_summaries": [],
+                "shift_summaries": [],
             }
 
         normalized = df.copy()
@@ -152,6 +242,10 @@ class DefectDataStore:
                 "top_defect_type_text": "暂无记录",
                 "recent_summary_text": "当前记录缺少有效时间字段，无法生成摘要。",
                 "type_breakdown": {},
+                "batch_summary_text": "暂无批次摘要",
+                "shift_summary_text": "暂无班次摘要",
+                "batch_summaries": [],
+                "shift_summaries": [],
             }
 
         total_records = int(len(normalized))
@@ -195,6 +289,29 @@ class DefectDataStore:
         recent_parts = [f"{key} {int(value)} 条" for key, value in recent_type_counts.items()]
         recent_summary_text = "最近 20 条记录：" + "，".join(recent_parts)
 
+        batch_summaries = self.get_batch_summaries(normalized)
+        shift_summaries = self.get_shift_summaries(normalized)
+
+        if batch_summaries:
+            top_batch = max(batch_summaries, key=lambda item: item["record_count"])
+            batch_summary_text = (
+                f"最活跃批次 {top_batch['batch_id']}，"
+                f"{top_batch['record_count']} 条，"
+                f"缺陷 {top_batch['defect_total']} 条"
+            )
+        else:
+            batch_summary_text = "暂无批次摘要"
+
+        if shift_summaries:
+            top_shift = max(shift_summaries, key=lambda item: item["record_count"])
+            shift_summary_text = (
+                f"主要班次 {top_shift['shift_name']}，"
+                f"{top_shift['record_count']} 条，"
+                f"批次 {top_shift['batch_count']} 个"
+            )
+        else:
+            shift_summary_text = "暂无班次摘要"
+
         return {
             "total_records": total_records,
             "cap_count": cap_count,
@@ -208,4 +325,8 @@ class DefectDataStore:
             "top_defect_type_text": top_defect_type_text,
             "recent_summary_text": recent_summary_text,
             "type_breakdown": type_breakdown,
+            "batch_summary_text": batch_summary_text,
+            "shift_summary_text": shift_summary_text,
+            "batch_summaries": batch_summaries,
+            "shift_summaries": shift_summaries,
         }
